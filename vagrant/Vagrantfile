@@ -1,0 +1,111 @@
+# -*- mode: ruby -*-
+# vi:set ft=ruby sw=2 ts=2 sts=2:
+
+BASE_NAME = "k8s"
+
+IP_NW = "192.168.56."
+
+RESOURCES = {
+  "control" => {
+    1 => {
+      "ram" =>2048,
+      "cpu" => 4, # bigger since it may run e2e tests.
+    },
+    2 => {
+      "ram" => 2048,
+      "cpu" =>2,
+    },
+  },
+  "worker" => {
+    "ram" => 4096,
+    "cpu" => 2,
+  },
+}
+
+
+# TODO: Check if vagrant can handle DNS settings
+def setup_dns(node)
+  # Set up /etc/hosts
+  node.vm.provision "setup-hosts", :type => "shell", :path => "ubuntu/vagrant/setup-hosts.sh" do |s|
+    s.args = ["enp0s8", node.vm.hostname]
+  end
+  # Set up DNS resolution
+  node.vm.provision "setup-dns", type: "shell", :path => "ubuntu/update-dns.sh"
+end
+
+# Runs provisioning steps that are required by masters and workers
+def provision_kubernetes_node(node)
+  # Set up kernel parameters, modules and tunables
+  node.vm.provision "setup-kernel", :type => "shell", :path => "ubuntu/setup-kernel.sh"
+  # Set up ssh
+  node.vm.provision "setup-ssh", :type => "shell", :path => "ubuntu/ssh.sh"
+  # Set up DNS
+  setup_dns node
+  # Install cert verification script
+  node.vm.provision "shell", inline: "ln -s /vagrant/ubuntu/cert_verify.sh /home/vagrant/cert_verify.sh"
+end
+
+NUM_CONTROL_NODES = 2
+NUM_WORKER_NODE = 2
+
+LB_IP_START = 10
+MASTER_IP_START = 20
+NODE_IP_START = 30
+
+
+Vagrant.configure("2") do |config|
+#   config.vm.box = "ubuntu/jammy64"
+  config.vm.box = "ubuntu/bionic64"
+#   config.vm.boot_timeout = 900
+#   config.vm.box_check_update = true
+
+  # Provision Control Nodes
+  (1..NUM_CONTROL_NODES).each do |i|
+    config.vm.define "controlplane-0#{i}" do |node|
+      node.vm.provider "vmware_desktop" do |vmware|
+        vmware.memory = RESOURCES["control"][i > 2 ? 2 : i]["ram"]
+        vmware.cpus = RESOURCES["control"][i > 2 ? 2 : i]["cpu"]
+      end
+#       node.vm.hostname = "controlplane0#{i}"
+#       node.vm.network :private_network, ip: IP_NW + "#{MASTER_IP_START + i}"
+#       node.vm.network "forwarded_port", guest: 22, host: "#{2710 + i}"
+#       provision_kubernetes_node node
+#       if i == 1
+#         # Install (opinionated) configs for vim and tmux on controlplane01. These used by the author for CKA exam.
+#         node.vm.provision "file", source: "./ubuntu/tmux.conf", destination: "$HOME/.tmux.conf"
+#         node.vm.provision "file", source: "./ubuntu/vimrc", destination: "$HOME/.vimrc"
+#         node.vm.provision "file", source: "../tools/approve-csr.sh", destination: "$HOME/approve-csr.sh"
+#       end
+    end
+  end
+
+  # Provision Load Balancer Node
+#   config.vm.define "loadbalancer" do |node|
+#     node.vm.provider "virtualbox" do |vb|
+#       vb.name = "kubernetes-ha-lb"
+#       vb.memory = 512
+#       vb.cpus = 1
+#     end
+#     node.vm.hostname = "loadbalancer"
+#     node.vm.network :private_network, ip: IP_NW + "#{LB_IP_START}"
+#     node.vm.network "forwarded_port", guest: 22, host: 2730
+#     # Set up ssh
+#     node.vm.provision "setup-ssh", :type => "shell", :path => "ubuntu/ssh.sh"
+#     setup_dns node
+#   end
+
+  # Provision Worker Nodes
+#   (1..NUM_WORKER_NODE).each do |i|
+#     config.vm.define "node0#{i}" do |node|
+#       node.vm.provider "virtualbox" do |vb|
+#         vb.name = "kubernetes-ha-node-#{i}"
+#         vb.memory = RESOURCES["worker"]["ram"]
+#         vb.cpus = RESOURCES["worker"]["cpu"]
+#       end
+#       node.vm.hostname = "node0#{i}"
+#       node.vm.network :private_network, ip: IP_NW + "#{NODE_IP_START + i}"
+#       node.vm.network "forwarded_port", guest: 22, host: "#{2720 + i}"
+#       provision_kubernetes_node node
+#     end
+#   end
+end
